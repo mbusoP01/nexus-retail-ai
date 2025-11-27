@@ -53,7 +53,7 @@ export default function NexusApp() {
 
   // FETCH DATA ON LOAD
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/products/")
+    fetch("https://nexus-retail-ai.onrender.com/products/")
       .then((res) => res.json())
       .then((data) => {
         setProducts(data);
@@ -254,7 +254,7 @@ function POSView({ products }: { products: Product[] }) {
 
   const fetchAI = async (sku: string) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/ai/predict/${sku}`);
+      const res = await fetch(`https://nexus-retail-ai.onrender.com/ai/predict/${sku}`);
       const data = await res.json();
       setPredictions((prev) => ({ ...prev, [sku]: data }));
     } catch (err) { console.error(err); }
@@ -273,7 +273,7 @@ function POSView({ products }: { products: Product[] }) {
     };
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/transactions/", {
+      const res = await fetch("https://nexus-retail-ai.onrender.com/transactions/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -426,7 +426,7 @@ function ChatView({ navigate }: { navigate: Function }) {
     setInput("");
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/ai/chat", {
+      const res = await fetch("https://nexus-retail-ai.onrender.com/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: userMsg })

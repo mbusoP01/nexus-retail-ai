@@ -17,9 +17,11 @@ models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI(title="NexusRetail AI Backend")
 
 # 3. CORS Configuration (Allows Frontend to talk to Backend)
+# Update this section to allow all connections
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "*"  # <--- ADD THIS (Allows any website to connect)
 ]
 
 app.add_middleware(
