@@ -1,0 +1,11 @@
+# Ignore huge dependency folders
+node_modules/
+__pycache__/
+.next/
+.venv/
+venv/
+
+# Ignore database and environment secrets
+*.db
+.env
+*.sqlite3
