@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, DateTime, Boolean, JSON
@@ -13,22 +14,46 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # --- CONFIGURATION ---
-GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID_HERE" # Put real ID if you have it
+GOOGLE_CLIENT_ID = "499075396456-25b2eqf24q74fp84v0gr7bivsudhit3l.apps.googleusercontent.com"
+ 
 
-# --- DATABASE SETUP ---
-SQLALCHEMY_DATABASE_URL = "sqlite:///./nexus_v2.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+# --- SECURITY CONFIGURATION ---
+# Emails that get auto-promoted to MANAGER
+MANAGER_EMAILS = [
+    "mbusophiri01@gmail.com",
+    "nombusophiri8@gmail.com",
+    "mbalaniphiri76@gmail.com"
+]
+
+# Hardcoded Admin Credentials (as requested)
+ADMIN_USER = "Velcrest_Admin"
+ADMIN_PASS_1 = "Velcrest.08@"
+ADMIN_PASS_2 = "Sobahle08!!"
+
+# --- DATABASE SETUP (Cloud Ready) ---
+# Checks for a Cloud Database URL (Postgres), otherwise falls back to local SQLite
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./nexus_v2.db")
+
+# Handle Postgres URL format for SQLAlchemy (Render uses 'postgres://', SQLAlchemy needs 'postgresql://')
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+if "sqlite" in DATABASE_URL:
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- MODELS (Tables) ---
+# --- MODELS ---
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     full_name = Column(String)
     picture = Column(String)
-    role = Column(String, default="Viewer")
+    role = Column(String, default="Viewer") # 'Manager' or 'Viewer'
     is_active = Column(Boolean, default=True)
 
 class Product(Base):
@@ -78,6 +103,10 @@ Base.metadata.create_all(bind=engine)
 class TokenSchema(BaseModel):
     credential: str
 
+class AdminLoginSchema(BaseModel):
+    username: str
+    password: str
+
 class ProductCreate(BaseModel):
     sku: str; name: str; cost_price: float; selling_price: float; stock_quantity: int; category: str
 
@@ -112,19 +141,46 @@ def get_db():
     try: yield db
     finally: db.close()
 
-# --- 1. AUTH ENDPOINT ---
+# --- 1. AUTH ENDPOINTS ---
+
 @app.post("/auth/login")
 def login_with_google(token: TokenSchema, db: Session = Depends(get_db)):
     try:
         id_info = id_token.verify_oauth2_token(token.credential, google_requests.Request(), GOOGLE_CLIENT_ID)
         email = id_info['email']
+        
+        # Check Whitelist Logic
+        role = "Viewer"
+        if email.lower() in [e.lower() for e in MANAGER_EMAILS]:
+            role = "Manager"
+
         user = db.query(User).filter(User.email == email).first()
         if not user:
-            user = User(email=email, full_name=id_info.get('name'), picture=id_info.get('picture'), role="Viewer")
+            user = User(email=email, full_name=id_info.get('name'), picture=id_info.get('picture'), role=role)
             db.add(user); db.commit(); db.refresh(user)
+        else:
+            # Update role if they were added to whitelist later
+            if user.role != role and role == "Manager":
+                user.role = role
+                db.commit()
+                
         return {"status": "success", "user": {"email": user.email, "name": user.full_name, "picture": user.picture, "role": user.role}}
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid Google Token")
+
+@app.post("/auth/admin-login")
+def login_as_admin(creds: AdminLoginSchema):
+    if creds.username == ADMIN_USER and (creds.password == ADMIN_PASS_1 or creds.password == ADMIN_PASS_2):
+        return {
+            "status": "success",
+            "user": {
+                "email": "admin@velcrest.com",
+                "name": "Velcrest Admin",
+                "picture": "", 
+                "role": "Manager" # Full Access
+            }
+        }
+    raise HTTPException(status_code=401, detail="Invalid Credentials")
 
 # --- 2. PRODUCT ENDPOINTS ---
 @app.post("/products/")
