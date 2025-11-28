@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 
 // --- CONFIGURATION ---
-const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID_HERE"; 
+const GOOGLE_CLIENT_ID = "499075396456-25b2eqf24q74fp84v0gr7bivsudhit3l.apps.googleusercontent.com"
+; 
 
 // --- TYPES ---
 interface Product { id: number; sku: string; name: string; cost_price: number; selling_price: number; stock_quantity: number; category: string; }
