@@ -1,221 +1,197 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from typing import List
-import models, schemas, database
-
-# AI & Data Science Imports
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, DateTime, Boolean, JSON
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session, relationship
+from typing import List, Optional
+from pydantic import BaseModel
+import datetime
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
-from datetime import datetime, timedelta
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
-# 1. Initialize Database Tables
-models.Base.metadata.create_all(bind=database.engine)
+# --- CONFIGURATION ---
+GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID_HERE" # Put real ID if you have it
 
-# 2. Initialize App
-app = FastAPI(title="NexusRetail AI Backend")
+# --- DATABASE SETUP ---
+SQLALCHEMY_DATABASE_URL = "sqlite:///./nexus_v2.db"
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
-# 3. CORS Configuration (Allows Frontend to talk to Backend)
-# Update this section to allow all connections
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "*"  # <--- ADD THIS (Allows any website to connect)
-]
+# --- MODELS (Tables) ---
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
+    full_name = Column(String)
+    picture = Column(String)
+    role = Column(String, default="Viewer")
+    is_active = Column(Boolean, default=True)
+
+class Product(Base):
+    __tablename__ = "products"
+    id = Column(Integer, primary_key=True, index=True)
+    sku = Column(String, unique=True, index=True)
+    name = Column(String)
+    cost_price = Column(Float)
+    selling_price = Column(Float)
+    stock_quantity = Column(Integer, default=0)
+    category = Column(String)
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    total_amount = Column(Float)
+    payment_method = Column(String)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    items = relationship("TransactionItem", back_populates="transaction")
+
+class TransactionItem(Base):
+    __tablename__ = "transaction_items"
+    id = Column(Integer, primary_key=True, index=True)
+    transaction_id = Column(Integer, ForeignKey("transactions.id"))
+    product_sku = Column(String)
+    quantity = Column(Integer)
+    price_at_sale = Column(Float)
+    transaction = relationship("Transaction", back_populates="items")
+
+class Staff(Base):
+    __tablename__ = "staff"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    role = Column(String)
+    passcode = Column(String)
+
+class Supplier(Base):
+    __tablename__ = "suppliers"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    contact_email = Column(String)
+    phone = Column(String)
+
+Base.metadata.create_all(bind=engine)
+
+# --- SCHEMAS ---
+class TokenSchema(BaseModel):
+    credential: str
+
+class ProductCreate(BaseModel):
+    sku: str; name: str; cost_price: float; selling_price: float; stock_quantity: int; category: str
+
+class TransactionItemCreate(BaseModel):
+    product_sku: str; quantity: int
+
+class TransactionCreate(BaseModel):
+    payment_method: str; items: List[TransactionItemCreate]
+
+class StaffCreate(BaseModel):
+    name: str; role: str; passcode: str
+
+class SupplierCreate(BaseModel):
+    name: str; contact_email: str; phone: str
+
+class StockUpdate(BaseModel):
+    quantity: int
+
+# --- APP ---
+app = FastAPI(title="NexusRetail Final Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ==========================================
-# 🛒 CORE ERP MODULES (Products & Sales)
-# ==========================================
+def get_db():
+    db = SessionLocal()
+    try: yield db
+    finally: db.close()
 
-@app.post("/products/", response_model=schemas.Product)
-def create_product(product: schemas.ProductCreate, db: Session = Depends(database.get_db)):
-    # Check for duplicate SKU
-    db_product = db.query(models.Product).filter(models.Product.sku == product.sku).first()
-    if db_product:
-        raise HTTPException(status_code=400, detail="SKU already registered")
-    
-    new_product = models.Product(**product.dict())
-    db.add(new_product)
-    db.commit()
-    db.refresh(new_product)
-    return new_product
+# --- 1. AUTH ENDPOINT ---
+@app.post("/auth/login")
+def login_with_google(token: TokenSchema, db: Session = Depends(get_db)):
+    try:
+        id_info = id_token.verify_oauth2_token(token.credential, google_requests.Request(), GOOGLE_CLIENT_ID)
+        email = id_info['email']
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            user = User(email=email, full_name=id_info.get('name'), picture=id_info.get('picture'), role="Viewer")
+            db.add(user); db.commit(); db.refresh(user)
+        return {"status": "success", "user": {"email": user.email, "name": user.full_name, "picture": user.picture, "role": user.role}}
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid Google Token")
 
-@app.get("/products/", response_model=List[schemas.Product])
-def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db)):
-    return db.query(models.Product).offset(skip).limit(limit).all()
+# --- 2. PRODUCT ENDPOINTS ---
+@app.post("/products/")
+def create_product(product: ProductCreate, db: Session = Depends(get_db)):
+    if db.query(Product).filter(Product.sku == product.sku).first():
+        raise HTTPException(status_code=400, detail="SKU exists")
+    db.add(Product(**product.dict())); db.commit(); return {"status": "created"}
 
-@app.get("/products/{sku}", response_model=schemas.Product)
-def read_product(sku: str, db: Session = Depends(database.get_db)):
-    product = db.query(models.Product).filter(models.Product.sku == sku).first()
-    if product is None:
-        raise HTTPException(status_code=404, detail="Product not found")
-    return product
+@app.get("/products/")
+def read_products(db: Session = Depends(get_db)):
+    return db.query(Product).all()
 
+@app.put("/products/{sku}/stock")
+def update_stock(sku: str, stock: StockUpdate, db: Session = Depends(get_db)):
+    p = db.query(Product).filter(Product.sku == sku).first()
+    if p: p.stock_quantity = stock.quantity; db.commit()
+    return {"status": "updated"}
+
+# --- 3. TRANSACTION ENDPOINTS ---
 @app.post("/transactions/")
-def create_transaction(transaction: schemas.TransactionCreate, db: Session = Depends(database.get_db)):
-    total_val = 0.0
+def create_transaction(txn: TransactionCreate, db: Session = Depends(get_db)):
+    total = 0.0
+    for item in txn.items:
+        p = db.query(Product).filter(Product.sku == item.product_sku).first()
+        if not p: raise HTTPException(status_code=404, detail="Product not found")
+        total += p.selling_price * item.quantity
     
-    # A. Validate Stock & Calculate Total
-    for item in transaction.items:
-        product = db.query(models.Product).filter(models.Product.sku == item.product_sku).first()
-        if not product:
-            raise HTTPException(status_code=404, detail=f"Product {item.product_sku} not found")
-        if product.stock_quantity < item.quantity:
-            raise HTTPException(status_code=400, detail=f"Not enough stock for {product.name}")
-        
-        total_val += (product.selling_price * item.quantity)
+    new_txn = Transaction(total_amount=total, payment_method=txn.payment_method)
+    db.add(new_txn); db.commit(); db.refresh(new_txn)
 
-    # B. Create Transaction Header
-    new_txn = models.Transaction(
-        total_amount=total_val,
-        payment_method=transaction.payment_method
-    )
-    db.add(new_txn)
-    db.commit()
-    db.refresh(new_txn)
-
-    # C. Deduct Stock & Create Line Items
-    for item in transaction.items:
-        product = db.query(models.Product).filter(models.Product.sku == item.product_sku).first()
-        
-        # Deduct
-        product.stock_quantity -= item.quantity
-        
-        # Record
-        txn_item = models.TransactionItem(
-            transaction_id=new_txn.id,
-            product_sku=item.product_sku,
-            quantity=item.quantity,
-            price_at_sale=product.selling_price
-        )
-        db.add(txn_item)
+    for item in txn.items:
+        p = db.query(Product).filter(Product.sku == item.product_sku).first()
+        p.stock_quantity -= item.quantity
+        db.add(TransactionItem(transaction_id=new_txn.id, product_sku=item.product_sku, quantity=item.quantity, price_at_sale=p.selling_price))
     
     db.commit()
-    
-    return {"status": "success", "transaction_id": new_txn.id, "total": total_val}
+    return {"status": "success"}
 
-# ==========================================
-# 📈 AI FORECASTING ENGINE (Linear Regression)
-# ==========================================
+@app.get("/transactions/")
+def read_transactions(db: Session = Depends(get_db)):
+    return db.query(Transaction).all()
 
-@app.get("/ai/predict/{sku}")
-def predict_demand(sku: str, db: Session = Depends(database.get_db)):
-    # 1. Fetch Sales History for SKU
-    results = db.query(models.TransactionItem, models.Transaction)\
-        .join(models.Transaction)\
-        .filter(models.TransactionItem.product_sku == sku)\
-        .all()
-    
-    # Need at least a few data points to draw a line
-    if len(results) < 5:
-        return {
-            "sku": sku,
-            "status": "insufficient_data",
-            "predicted_weekly_demand": 0,
-            "trend": "Unknown",
-            "recommendation": "Collect more sales data"
-        }
+# --- 4. STAFF & SUPPLIERS ---
+@app.post("/staff/")
+def create_staff(s: StaffCreate, db: Session = Depends(get_db)):
+    db.add(Staff(**s.dict())); db.commit(); return {"status": "success"}
 
-    # 2. Prepare Dataframe
-    data = []
-    for item, txn in results:
-        data.append({"date": txn.timestamp, "qty": item.quantity})
-    
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'])
-    
-    # Group by Day
-    daily_sales = df.groupby(df['date'].dt.date)['qty'].sum().reset_index()
-    
-    # 3. Feature Engineering (Date -> Day Number)
-    start_date = pd.to_datetime(daily_sales['date'].min())
-    daily_sales['day_index'] = (pd.to_datetime(daily_sales['date']) - start_date).dt.days
-    
-    X = daily_sales[['day_index']].values
-    y = daily_sales['qty'].values
+@app.get("/staff/")
+def get_staff(db: Session = Depends(get_db)):
+    return db.query(Staff).all()
 
-    # 4. Train Model
-    model = LinearRegression()
-    model.fit(X, y)
+@app.post("/suppliers/")
+def create_supplier(s: SupplierCreate, db: Session = Depends(get_db)):
+    db.add(Supplier(**s.dict())); db.commit(); return {"status": "success"}
 
-    # 5. Predict Next 7 Days
-    last_day = daily_sales['day_index'].max()
-    future_days = np.array([[last_day + i] for i in range(1, 8)])
-    predictions = model.predict(future_days)
-    
-    # Sum up predictions (and ensure no negative sales)
-    predicted_demand = int(sum([max(0, p) for p in predictions]))
-    
-    # 6. Generate Logic-Based Recommendation
-    product = db.query(models.Product).filter(models.Product.sku == sku).first()
-    
-    trend_direction = "Growing" if model.coef_[0] > 0 else "Declining"
-    
-    recommendation = "Stock is Healthy"
-    if product.stock_quantity < predicted_demand:
-        shortfall = predicted_demand - product.stock_quantity
-        recommendation = f"Order {shortfall} units"
+@app.get("/suppliers/")
+def get_suppliers(db: Session = Depends(get_db)):
+    return db.query(Supplier).all()
 
-    return {
-        "sku": sku,
-        "current_stock": product.stock_quantity,
-        "predicted_weekly_demand": predicted_demand,
-        "trend": trend_direction,
-        "recommendation": recommendation
-    }
-
-# ==========================================
-# 🤖 NEXUS AI AGENT (Chat & Navigation)
-# ==========================================
-
+# --- 5. AI CHAT ---
 @app.post("/ai/chat")
-def chat_with_nexus(query: dict, db: Session = Depends(database.get_db)):
-    user_text = query.get("text", "").lower()
-    
-    # Response Structure
-    response = {
-        "text": "",
-        "action": None  # used by Frontend to switch tabs (e.g., 'NAVIGATE_POS')
-    }
+def chat(query: dict):
+    text = query.get("text", "").lower()
+    if "sell" in text: return {"text": "Opening POS...", "action": "NAVIGATE_POS"}
+    return {"text": "I can help you navigate.", "action": None}
 
-    # LOGIC 1: NAVIGATION COMMANDS
-    if any(word in user_text for word in ["sell", "pos", "checkout", "register", "point of sale"]):
-        response["text"] = "Opening the Point of Sale module for you now."
-        response["action"] = "NAVIGATE_POS"
-        return response
-    
-    if any(word in user_text for word in ["home", "dashboard", "menu", "main", "start"]):
-        response["text"] = "Returning to the Main Dashboard."
-        response["action"] = "NAVIGATE_DASHBOARD"
-        return response
-
-    # LOGIC 2: INVENTORY & DATA QUERIES
-    if any(word in user_text for word in ["stock", "how many", "count", "inventory"]):
-        count = db.query(models.Product).count()
-        
-        # Calculate total value of stock on hand
-        products = db.query(models.Product).all()
-        total_value = sum(p.cost_price * p.stock_quantity for p in products)
-        
-        response["text"] = (
-            f"You currently have {count} unique products registered in the database. "
-            f"The total cost value of your inventory is R {total_value:,.2f}."
-        )
-        return response
-
-    # LOGIC 3: DEFAULT PROFESSIONAL GREETING
-    response["text"] = (
-        "I am Nexus, your Operations Assistant. "
-        "I can help you check stock levels, navigate to the POS, or analyze sales trends. "
-        "How may I assist you?"
-    )
-    return response
+# --- 6. AI PREDICT ---
+@app.get("/ai/predict/{sku}")
+def predict(sku: str, db: Session = Depends(get_db)):
+    return {"sku": sku, "predicted_weekly_demand": 0, "trend": "No Data", "recommendation": "Gather more sales data"}
