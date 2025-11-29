@@ -3,8 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, DateTime, Boolean, JSON
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session, relationship
-from typing import List, Optional
+from sqlalchemy.orm import sessionmaker, Session, relationship, joinedload # <-- ADDED joinedloadfrom typing import List, Optional
 from pydantic import BaseModel
 import datetime
 import pandas as pd
@@ -180,9 +179,9 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
 
 @app.get("/products/")
 def read_products(db: Session = Depends(get_db)):
-    # Now includes images relationship automatically
-    return db.query(Product).all()
-
+    # FIX: Use joinedload to force the database to pull the images in the same query
+    return db.query(Product).options(joinedload(Product.images)).all()
+    
 @app.put("/products/{sku}/stock")
 def update_stock(sku: str, stock: StockUpdate, db: Session = Depends(get_db)):
     p = db.query(Product).filter(Product.sku == sku).first()
