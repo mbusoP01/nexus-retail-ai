@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 
 // --- CONFIGURATION ---
-const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID_HERE"; 
+const GOOGLE_CLIENT_ID = "499075396456-25b2eqf24q74fp84v0gr7bivsudhit3l.apps.googleusercontent.com"; 
 const API_BASE_URL = "https://nexus-retail-ai.onrender.com";
 
 // --- TYPES ---

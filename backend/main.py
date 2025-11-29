@@ -14,7 +14,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # --- CONFIGURATION ---
-GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID_HERE" 
+GOOGLE_CLIENT_ID = "499075396456-25b2eqf24q74fp84v0gr7bivsudhit3l.apps.googleusercontent.com"
 
 # --- SECURITY CONFIGURATION ---
 MANAGER_EMAILS = [
