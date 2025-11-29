@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 
 // --- CONFIGURATION ---
-const GOOGLE_CLIENT_ID = "499075396456-25b2eqf24q74fp84v0gr7bivsudhit3l.apps.googleusercontent.com"; 
+const GOOGLE_CLIENT_ID = "499075396456-25b2eqf24q74fp84v0gr7bivsudhit3l.apps.googleusercontent.com"; // Ensure this is real
 const API_BASE_URL = "https://nexus-retail-ai.onrender.com";
 
 // --- TYPES ---
@@ -18,7 +18,7 @@ interface ProductImage { id: number; image_url: string; is_primary: boolean; }
 interface Product { 
   id: number; sku: string; name: string; cost_price: number; selling_price: number; 
   stock_quantity: number; category: string; 
-  images?: ProductImage[]; // NEW: Images Array
+  images?: ProductImage[]; // Images Array
 }
 interface CartItem extends Product { qty: number; }
 interface Transaction { id: number; total_amount: number; payment_method: string; timestamp: string; }
@@ -51,7 +51,7 @@ export default function NexusApp() {
     fetch(`${API_BASE_URL}/products/`)
       .then((res) => { if (!res.ok) throw new Error("Backend Error"); return res.json(); })
       .then((data) => setProducts(data))
-      .catch(err => console.warn("API Note: Backend might be sleeping or empty."));
+      .catch(err => console.warn("API Note: Backend sleeping?"));
   };
 
   useEffect(() => { if (user) fetchProducts(); }, [user]);
@@ -66,7 +66,7 @@ export default function NexusApp() {
       if (data.status === "success") loginUser(data.user);
       else throw new Error(data.detail);
     } catch (err) {
-      console.warn("Google Auth Failed/Dev Mode");
+      console.warn("Dev Mode Login");
       const decoded: any = jwtDecode(token);
       loginUser({ name: decoded.name, email: decoded.email, picture: decoded.picture, role: "Viewer" });
     }
@@ -78,7 +78,7 @@ export default function NexusApp() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: adminUser, password: adminPass })
       });
       if (res.ok) { const data = await res.json(); loginUser(data.user); } else { alert("Invalid Admin Credentials"); }
-    } catch (err) { alert("Network Error: Could not reach Server."); }
+    } catch (err) { alert("Network Error"); }
   };
 
   const handleSkipDev = () => { loginUser({ name: "Guest Developer", email: "guest@dev.local", picture: "", role: "Viewer" }); };
@@ -146,7 +146,7 @@ function DashboardView({ products, navigate, role }: any) {
   );
 }
 
-// --- UPDATED POS VIEW (WITH IMAGES) ---
+// --- VISUAL POS VIEW ---
 function POSView({ products, refresh }: { products: Product[], refresh: Function }) {
   const [cart, setCart] = useState<CartItem[]>([]); 
   const [predictions, setPredictions] = useState<Record<string, AIPrediction>>({}); 
@@ -182,8 +182,7 @@ function POSView({ products, refresh }: { products: Product[], refresh: Function
   );
 }
 
-// ... (KEEP StaffView, SuppliersView, SettingsView, AddProductView, InventoryView, ReportsView, ChatView, Sidebar UNCHANGED)
-// Minified for brevity but they must exist
+// ... (Rest of modules StaffView, SuppliersView etc. - same as before)
 function StaffView() { const [staff, setStaff] = useState<Staff[]>([]); const [form, setForm] = useState({ name: "", role: "Cashier", passcode: "" }); const fetchStaff = () => { fetch(`${API_BASE_URL}/staff/`).then(r => r.json()).then(setStaff).catch(console.error); }; useEffect(() => { fetchStaff(); }, []); const handleAdd = async () => { await fetch(`${API_BASE_URL}/staff/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }); alert("Staff Member Added"); fetchStaff(); setForm({ name: "", role: "Cashier", passcode: "" }); }; return (<div className="p-10 max-w-5xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-bold">Staff Management</h2><div className="bg-white p-4 rounded-xl border border-gray-200 flex gap-2"><input placeholder="Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="border p-2 rounded text-sm"/><select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="border p-2 rounded text-sm"><option>Cashier</option><option>Manager</option></select><input placeholder="Passcode" value={form.passcode} onChange={e => setForm({...form, passcode: e.target.value})} className="border p-2 rounded text-sm w-24"/><button onClick={handleAdd} className="bg-indigo-600 text-white p-2 rounded hover:bg-indigo-700"><UserPlus size={20}/></button></div></div><div className="grid grid-cols-3 gap-6">{staff.map(s => (<div key={s.id} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center font-bold text-gray-500">{s.name.charAt(0)}</div><div><h4 className="font-bold text-lg">{s.name}</h4><p className="text-sm text-gray-500">{s.role}</p></div></div><div className="text-xs bg-gray-50 px-2 py-1 rounded text-gray-400">ID: {s.passcode}</div></div>))}{staff.length === 0 && <p className="text-gray-400 col-span-3 text-center py-10">No staff members found.</p>}</div></div>); }
 function SuppliersView() { const [suppliers, setSuppliers] = useState<Supplier[]>([]); const [form, setForm] = useState({ name: "", contact_email: "", phone: "" }); const fetchSuppliers = () => { fetch(`${API_BASE_URL}/suppliers/`).then(r => r.json()).then(setSuppliers).catch(console.error); }; useEffect(() => { fetchSuppliers(); }, []); const handleAdd = async () => { await fetch(`${API_BASE_URL}/suppliers/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }); alert("Supplier Added"); fetchSuppliers(); setForm({ name: "", contact_email: "", phone: "" }); }; return (<div className="p-10 max-w-5xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-bold">Suppliers</h2><div className="bg-white p-4 rounded-xl border border-gray-200 flex gap-2"><input placeholder="Company Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="border p-2 rounded text-sm"/><input placeholder="Email" value={form.contact_email} onChange={e => setForm({...form, contact_email: e.target.value})} className="border p-2 rounded text-sm"/><input placeholder="Phone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="border p-2 rounded text-sm w-32"/><button onClick={handleAdd} className="bg-indigo-600 text-white p-2 rounded hover:bg-indigo-700"><Plus size={20}/></button></div></div><div className="bg-white rounded-[20px] shadow-sm border border-gray-200 overflow-hidden"><table className="w-full text-left"><thead className="bg-gray-50 text-gray-500 text-sm"><tr><th className="p-5">Company</th><th className="p-5">Email</th><th className="p-5">Phone</th></tr></thead><tbody className="divide-y divide-gray-100">{suppliers.map(s => (<tr key={s.id}><td className="p-5 font-bold">{s.name}</td><td className="p-5 text-gray-600">{s.contact_email}</td><td className="p-5 text-gray-600">{s.phone}</td></tr>))}</tbody></table>{suppliers.length === 0 && <p className="p-8 text-center text-gray-400">No suppliers registered.</p>}</div></div>); }
 function SettingsView({ storeName, setStoreName }: any) { const [localName, setLocalName] = useState(storeName); const handleSave = () => { setStoreName(localName); localStorage.setItem("storeName", localName); alert("Settings Saved!"); }; return (<div className="p-10 max-w-xl mx-auto"><h2 className="text-2xl font-bold mb-6">System Settings</h2><div className="bg-white p-8 rounded-[20px] border border-gray-200 space-y-6 shadow-sm"><div><label className="block text-sm font-bold text-gray-700 mb-2">Store Name</label><input value={localName} onChange={e => setLocalName(e.target.value)} className="w-full border border-gray-200 p-3 rounded-lg bg-gray-50"/><p className="text-xs text-gray-400 mt-1">This name will appear on the sidebar.</p></div><div><label className="block text-sm font-bold text-gray-700 mb-2">Currency</label><select className="w-full border border-gray-200 p-3 rounded-lg bg-gray-50"><option>South African Rand (ZAR)</option><option>US Dollar ($)</option></select></div><button onClick={handleSave} className="w-full bg-gray-900 text-white p-4 rounded-xl font-bold flex items-center justify-center gap-2"><Save size={18}/> Save Changes</button></div></div>); }
