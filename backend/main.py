@@ -14,27 +14,21 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # --- CONFIGURATION ---
-GOOGLE_CLIENT_ID = "499075396456-25b2eqf24q74fp84v0gr7bivsudhit3l.apps.googleusercontent.com"
- 
+GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID_HERE" 
 
 # --- SECURITY CONFIGURATION ---
-# Emails that get auto-promoted to MANAGER
 MANAGER_EMAILS = [
     "mbusophiri01@gmail.com",
     "nombusophiri8@gmail.com",
     "mbalaniphiri76@gmail.com"
 ]
 
-# Hardcoded Admin Credentials (as requested)
 ADMIN_USER = "Velcrest_Admin"
 ADMIN_PASS_1 = "Velcrest.08@"
 ADMIN_PASS_2 = "Sobahle08!!"
 
-# --- DATABASE SETUP (Cloud Ready) ---
-# Checks for a Cloud Database URL (Postgres), otherwise falls back to local SQLite
+# --- DATABASE SETUP ---
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./nexus_v2.db")
-
-# Handle Postgres URL format for SQLAlchemy (Render uses 'postgres://', SQLAlchemy needs 'postgresql://')
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -53,7 +47,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     full_name = Column(String)
     picture = Column(String)
-    role = Column(String, default="Viewer") # 'Manager' or 'Viewer'
+    role = Column(String, default="Viewer")
     is_active = Column(Boolean, default=True)
 
 class Product(Base):
@@ -65,6 +59,19 @@ class Product(Base):
     selling_price = Column(Float)
     stock_quantity = Column(Integer, default=0)
     category = Column(String)
+    
+    # NEW: Link to Images
+    images = relationship("ProductImage", back_populates="product")
+
+# --- NEW TABLE: PRODUCT IMAGES ---
+class ProductImage(Base):
+    __tablename__ = "product_images"
+    id = Column(Integer, primary_key=True, index=True)
+    product_sku = Column(String, ForeignKey("products.sku"))
+    image_url = Column(String)
+    is_primary = Column(Boolean, default=False)
+    
+    product = relationship("Product", back_populates="images")
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -142,28 +149,19 @@ def get_db():
     finally: db.close()
 
 # --- 1. AUTH ENDPOINTS ---
-
 @app.post("/auth/login")
 def login_with_google(token: TokenSchema, db: Session = Depends(get_db)):
     try:
         id_info = id_token.verify_oauth2_token(token.credential, google_requests.Request(), GOOGLE_CLIENT_ID)
         email = id_info['email']
-        
-        # Check Whitelist Logic
         role = "Viewer"
-        if email.lower() in [e.lower() for e in MANAGER_EMAILS]:
-            role = "Manager"
-
+        if email.lower() in [e.lower() for e in MANAGER_EMAILS]: role = "Manager"
         user = db.query(User).filter(User.email == email).first()
         if not user:
             user = User(email=email, full_name=id_info.get('name'), picture=id_info.get('picture'), role=role)
             db.add(user); db.commit(); db.refresh(user)
         else:
-            # Update role if they were added to whitelist later
-            if user.role != role and role == "Manager":
-                user.role = role
-                db.commit()
-                
+            if user.role != role and role == "Manager": user.role = role; db.commit()
         return {"status": "success", "user": {"email": user.email, "name": user.full_name, "picture": user.picture, "role": user.role}}
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid Google Token")
@@ -171,26 +169,18 @@ def login_with_google(token: TokenSchema, db: Session = Depends(get_db)):
 @app.post("/auth/admin-login")
 def login_as_admin(creds: AdminLoginSchema):
     if creds.username == ADMIN_USER and (creds.password == ADMIN_PASS_1 or creds.password == ADMIN_PASS_2):
-        return {
-            "status": "success",
-            "user": {
-                "email": "admin@velcrest.com",
-                "name": "Velcrest Admin",
-                "picture": "", 
-                "role": "Manager" # Full Access
-            }
-        }
+        return {"status": "success", "user": {"email": "admin@velcrest.com", "name": "Velcrest Admin", "picture": "", "role": "Manager"}}
     raise HTTPException(status_code=401, detail="Invalid Credentials")
 
 # --- 2. PRODUCT ENDPOINTS ---
 @app.post("/products/")
 def create_product(product: ProductCreate, db: Session = Depends(get_db)):
-    if db.query(Product).filter(Product.sku == product.sku).first():
-        raise HTTPException(status_code=400, detail="SKU exists")
+    if db.query(Product).filter(Product.sku == product.sku).first(): raise HTTPException(status_code=400, detail="SKU exists")
     db.add(Product(**product.dict())); db.commit(); return {"status": "created"}
 
 @app.get("/products/")
 def read_products(db: Session = Depends(get_db)):
+    # Now includes images relationship automatically
     return db.query(Product).all()
 
 @app.put("/products/{sku}/stock")
@@ -207,47 +197,34 @@ def create_transaction(txn: TransactionCreate, db: Session = Depends(get_db)):
         p = db.query(Product).filter(Product.sku == item.product_sku).first()
         if not p: raise HTTPException(status_code=404, detail="Product not found")
         total += p.selling_price * item.quantity
-    
     new_txn = Transaction(total_amount=total, payment_method=txn.payment_method)
     db.add(new_txn); db.commit(); db.refresh(new_txn)
-
     for item in txn.items:
         p = db.query(Product).filter(Product.sku == item.product_sku).first()
         p.stock_quantity -= item.quantity
         db.add(TransactionItem(transaction_id=new_txn.id, product_sku=item.product_sku, quantity=item.quantity, price_at_sale=p.selling_price))
-    
     db.commit()
     return {"status": "success"}
 
 @app.get("/transactions/")
-def read_transactions(db: Session = Depends(get_db)):
-    return db.query(Transaction).all()
+def read_transactions(db: Session = Depends(get_db)): return db.query(Transaction).all()
 
 # --- 4. STAFF & SUPPLIERS ---
 @app.post("/staff/")
-def create_staff(s: StaffCreate, db: Session = Depends(get_db)):
-    db.add(Staff(**s.dict())); db.commit(); return {"status": "success"}
-
+def create_staff(s: StaffCreate, db: Session = Depends(get_db)): db.add(Staff(**s.dict())); db.commit(); return {"status": "success"}
 @app.get("/staff/")
-def get_staff(db: Session = Depends(get_db)):
-    return db.query(Staff).all()
-
+def get_staff(db: Session = Depends(get_db)): return db.query(Staff).all()
 @app.post("/suppliers/")
-def create_supplier(s: SupplierCreate, db: Session = Depends(get_db)):
-    db.add(Supplier(**s.dict())); db.commit(); return {"status": "success"}
-
+def create_supplier(s: SupplierCreate, db: Session = Depends(get_db)): db.add(Supplier(**s.dict())); db.commit(); return {"status": "success"}
 @app.get("/suppliers/")
-def get_suppliers(db: Session = Depends(get_db)):
-    return db.query(Supplier).all()
+def get_suppliers(db: Session = Depends(get_db)): return db.query(Supplier).all()
 
-# --- 5. AI CHAT ---
+# --- 5. AI ---
 @app.post("/ai/chat")
 def chat(query: dict):
     text = query.get("text", "").lower()
     if "sell" in text: return {"text": "Opening POS...", "action": "NAVIGATE_POS"}
     return {"text": "I can help you navigate.", "action": None}
 
-# --- 6. AI PREDICT ---
 @app.get("/ai/predict/{sku}")
-def predict(sku: str, db: Session = Depends(get_db)):
-    return {"sku": sku, "predicted_weekly_demand": 0, "trend": "No Data", "recommendation": "Gather more sales data"}
+def predict(sku: str, db: Session = Depends(get_db)): return {"sku": sku, "predicted_weekly_demand": 0, "trend": "No Data", "recommendation": "Gather more sales data"}

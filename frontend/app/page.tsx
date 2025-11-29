@@ -6,16 +6,20 @@ import {
   LayoutDashboard, ShoppingCart, MessageSquare, TrendingUp, Package, 
   CreditCard, Search, ArrowRight, Sparkles, AlertCircle, CheckCircle2, 
   Send, Users, Truck, Settings, FileText, Plus, Save, LogOut, UserPlus,
-  UploadCloud, Link as LinkIcon, Check, Lock
+  UploadCloud, Link as LinkIcon, Check, Lock, Image as ImageIcon
 } from "lucide-react";
 
 // --- CONFIGURATION ---
-const GOOGLE_CLIENT_ID = "499075396456-25b2eqf24q74fp84v0gr7bivsudhit3l.apps.googleusercontent.com"
-; // Ensure this is your real Client ID
-const API_BASE_URL = "https://nexus-retail-ai.onrender.com"; // <--- THE FIX: POINTS TO CLOUD
+const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID_HERE"; 
+const API_BASE_URL = "https://nexus-retail-ai.onrender.com";
 
 // --- TYPES ---
-interface Product { id: number; sku: string; name: string; cost_price: number; selling_price: number; stock_quantity: number; category: string; }
+interface ProductImage { id: number; image_url: string; is_primary: boolean; }
+interface Product { 
+  id: number; sku: string; name: string; cost_price: number; selling_price: number; 
+  stock_quantity: number; category: string; 
+  images?: ProductImage[]; // NEW: Images Array
+}
 interface CartItem extends Product { qty: number; }
 interface Transaction { id: number; total_amount: number; payment_method: string; timestamp: string; }
 interface UserProfile { email: string; name: string; picture: string; role: string; }
@@ -30,8 +34,6 @@ export default function NexusApp() {
   const [products, setProducts] = useState<Product[]>([]);
   const [storeName, setStoreName] = useState("Nexus Retail Store");
   const [showOnboarding, setShowOnboarding] = useState(false);
-
-  // Admin Login State
   const [adminUser, setAdminUser] = useState("");
   const [adminPass, setAdminPass] = useState("");
 
@@ -46,7 +48,6 @@ export default function NexusApp() {
 
   const fetchProducts = () => {
     if (!user) return; 
-    // USE API_BASE_URL HERE
     fetch(`${API_BASE_URL}/products/`)
       .then((res) => { if (!res.ok) throw new Error("Backend Error"); return res.json(); })
       .then((data) => setProducts(data))
@@ -55,18 +56,15 @@ export default function NexusApp() {
 
   useEffect(() => { if (user) fetchProducts(); }, [user]);
 
-  // --- AUTH HANDLERS ---
   const handleGoogleSuccess = async (credentialResponse: any) => {
     const token = credentialResponse.credential;
     try {
-      // USE API_BASE_URL HERE
       const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ credential: token })
       });
       const data = await res.json();
-      if (data.status === "success") {
-        loginUser(data.user);
-      } else throw new Error(data.detail);
+      if (data.status === "success") loginUser(data.user);
+      else throw new Error(data.detail);
     } catch (err) {
       console.warn("Google Auth Failed/Dev Mode");
       const decoded: any = jwtDecode(token);
@@ -76,80 +74,38 @@ export default function NexusApp() {
 
   const handleAdminLogin = async () => {
     try {
-      // USE API_BASE_URL HERE - THIS FIXES THE NETWORK ERROR
       const res = await fetch(`${API_BASE_URL}/auth/admin-login`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: adminUser, password: adminPass })
       });
-      if (res.ok) {
-        const data = await res.json();
-        loginUser(data.user);
-      } else {
-        alert("Invalid Admin Credentials");
-      }
-    } catch (err) { 
-      console.error(err);
-      alert("Network Error: Could not reach Server. Is it sleeping?"); 
-    }
+      if (res.ok) { const data = await res.json(); loginUser(data.user); } else { alert("Invalid Admin Credentials"); }
+    } catch (err) { alert("Network Error: Could not reach Server."); }
   };
 
-  const handleSkipDev = () => {
-    loginUser({ name: "Guest Developer", email: "guest@dev.local", picture: "", role: "Viewer" });
-  };
+  const handleSkipDev = () => { loginUser({ name: "Guest Developer", email: "guest@dev.local", picture: "", role: "Viewer" }); };
+  const loginUser = (userData: UserProfile) => { setUser(userData); localStorage.setItem("nexus_user", JSON.stringify(userData)); if (!localStorage.getItem("nexus_onboarding_complete")) setShowOnboarding(true); }
+  const handleLogout = () => { setUser(null); localStorage.removeItem("nexus_user"); setActiveTab("dashboard"); };
+  const completeOnboarding = () => { localStorage.setItem("nexus_onboarding_complete", "true"); setShowOnboarding(false); if(user) fetchProducts(); };
 
-  const loginUser = (userData: UserProfile) => {
-    setUser(userData);
-    localStorage.setItem("nexus_user", JSON.stringify(userData));
-    if (!localStorage.getItem("nexus_onboarding_complete")) setShowOnboarding(true);
-  }
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem("nexus_user");
-    setActiveTab("dashboard");
-  };
-
-  const completeOnboarding = () => {
-    localStorage.setItem("nexus_onboarding_complete", "true");
-    setShowOnboarding(false);
-    if(user) fetchProducts();
-  };
-
-  // --- RENDER: LOGIN ---
   if (!user) {
     return (
       <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
         <div className="flex h-screen items-center justify-center bg-gray-900 relative overflow-hidden font-sans">
           <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-indigo-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
           <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-          
           <div className="z-10 bg-white/10 backdrop-blur-lg p-10 rounded-2xl border border-white/20 shadow-2xl text-center max-w-md w-full">
             <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg"><Sparkles className="text-indigo-600" size={32} /></div>
             <h1 className="text-3xl font-bold text-white mb-2">NexusRetail AI</h1>
             <p className="text-gray-300 mb-8">Enterprise Operating System</p>
-            
-            {/* GOOGLE LOGIN */}
             <div className="flex justify-center mb-6"><GoogleLogin onSuccess={handleGoogleSuccess} onError={() => alert('Login Failed')} theme="filled_black" shape="pill" size="large" /></div>
-            
             <div className="flex items-center gap-4 my-4"><div className="h-px bg-gray-600 flex-1"></div><span className="text-gray-400 text-sm">OR ADMIN LOGIN</span><div className="h-px bg-gray-600 flex-1"></div></div>
-
-            {/* ADMIN LOGIN */}
-            <div className="space-y-3">
-                <input placeholder="Username" value={adminUser} onChange={e => setAdminUser(e.target.value)} className="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:border-indigo-500 outline-none" />
-                <input type="password" placeholder="Password" value={adminPass} onChange={e => setAdminPass(e.target.value)} className="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:border-indigo-500 outline-none" />
-                <button onClick={handleAdminLogin} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><Lock size={16}/> Login</button>
-            </div>
-
-            {/* SKIP DEV MODE */}
-            <div className="mt-6">
-              <button onClick={handleSkipDev} className="text-gray-500 hover:text-white text-xs font-bold underline cursor-pointer transition-colors">Skip Dev Mode (Restricted Access)</button>
-            </div>
+            <div className="space-y-3"><input placeholder="Username" value={adminUser} onChange={e => setAdminUser(e.target.value)} className="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:border-indigo-500 outline-none" /><input type="password" placeholder="Password" value={adminPass} onChange={e => setAdminPass(e.target.value)} className="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:border-indigo-500 outline-none" /><button onClick={handleAdminLogin} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><Lock size={16}/> Login</button></div>
+            <div className="mt-6"><button onClick={handleSkipDev} className="text-gray-500 hover:text-white text-xs font-bold underline cursor-pointer transition-colors">Skip Dev Mode (Restricted Access)</button></div>
           </div>
         </div>
       </GoogleOAuthProvider>
     );
   }
 
-  // --- RENDER: APP ---
   return (
     <div className="flex h-screen bg-[#F3F4F6] font-sans text-gray-900 relative">
       {showOnboarding && <OnboardingWizard onComplete={completeOnboarding} setStoreName={setStoreName} />}
@@ -159,8 +115,6 @@ export default function NexusApp() {
           {activeTab === "dashboard" && <DashboardView products={products} navigate={setActiveTab} role={user.role} />}
           {activeTab === "pos" && <POSView products={products} refresh={fetchProducts} />}
           {activeTab === "chat" && <ChatView navigate={setActiveTab} />}
-          
-          {/* RESTRICTED VIEWS */}
           {activeTab === "add-product" && (user.role === "Manager" ? <AddProductView refresh={fetchProducts} navigate={setActiveTab} /> : <AccessDenied/>)}
           {activeTab === "inventory" && <InventoryView products={products} refresh={fetchProducts} />}
           {activeTab === "reports" && (user.role === "Manager" ? <ReportsView /> : <AccessDenied/>)}
@@ -173,11 +127,8 @@ export default function NexusApp() {
   );
 }
 
-function AccessDenied() {
-    return <div className="flex h-full items-center justify-center flex-col text-center p-10 text-gray-400"><Lock size={48} className="mb-4"/><h2 className="text-2xl font-bold text-gray-700">Access Denied</h2><p>You need <b>Manager</b> permissions to view this page.</p></div>
-}
+function AccessDenied() { return <div className="flex h-full items-center justify-center flex-col text-center p-10 text-gray-400"><Lock size={48} className="mb-4"/><h2 className="text-2xl font-bold text-gray-700">Access Denied</h2><p>You need <b>Manager</b> permissions to view this page.</p></div>; }
 
-// --- VIEWS ---
 function DashboardView({ products, navigate, role }: any) {
   const lowStock = products.filter((p: any) => p.stock_quantity < 10);
   const [date, setDate] = useState(""); useEffect(() => setDate(new Date().toLocaleDateString()), []);
@@ -190,20 +141,49 @@ function DashboardView({ products, navigate, role }: any) {
         {role === "Manager" && <div onClick={() => navigate('add-product')} className="bg-white p-6 rounded-[20px] shadow-sm border border-gray-100 cursor-pointer hover:border-indigo-500 transition-all hover:translate-y-[-2px] flex flex-col"><div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-4"><Plus size={24}/></div><h4 className="font-bold text-xl">Add Product</h4> <p className="text-gray-500 mt-2">Register new stock items.</p></div>}
       </section>
       <h3 className="text-lg font-bold text-gray-700 mb-5">All Actions</h3>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <ActionBtn icon={<Package/>} label="Inventory Count" onClick={() => navigate('inventory')} />
-        {role === "Manager" && <ActionBtn icon={<Plus/>} label="Add New Product" onClick={() => navigate('add-product')} />}
-        {role === "Manager" && <ActionBtn icon={<FileText/>} label="Sales Reports" onClick={() => navigate('reports')} />}
-        {role === "Manager" && <ActionBtn icon={<Users/>} label="Staff Management" onClick={() => navigate('staff')} />}
-        <ActionBtn icon={<Truck/>} label="Suppliers" onClick={() => navigate('suppliers')} />
-        {role === "Manager" && <ActionBtn icon={<Settings/>} label="Settings" onClick={() => navigate('settings')} />}
-      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4"><ActionBtn icon={<Package/>} label="Inventory Count" onClick={() => navigate('inventory')} />{role === "Manager" && <ActionBtn icon={<Plus/>} label="Add New Product" onClick={() => navigate('add-product')} />}{role === "Manager" && <ActionBtn icon={<FileText/>} label="Sales Reports" onClick={() => navigate('reports')} />}{role === "Manager" && <ActionBtn icon={<Users/>} label="Staff Management" onClick={() => navigate('staff')} />}<ActionBtn icon={<Truck/>} label="Suppliers" onClick={() => navigate('suppliers')} />{role === "Manager" && <ActionBtn icon={<Settings/>} label="Settings" onClick={() => navigate('settings')} />}</div>
     </div>
   );
 }
 
-// ... (MINIFIED VIEWS TO KEEP FILE SMALL - THESE ARE UNCHANGED)
-function POSView({ products, refresh }: { products: Product[], refresh: Function }) { const [cart, setCart] = useState<CartItem[]>([]); const [predictions, setPredictions] = useState<Record<string, AIPrediction>>({}); const [search, setSearch] = useState(""); const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase())); const addToCart = (product: Product) => { setCart((prev) => { const existing = prev.find((item) => item.sku === product.sku); if (existing) return prev.map((item) => item.sku === product.sku ? { ...item, qty: item.qty + 1 } : item); return [...prev, { ...product, qty: 1 }]; }); }; const fetchAI = async (sku: string) => { try { const res = await fetch(`${API_BASE_URL}/ai/predict/${sku}`); const data = await res.json(); setPredictions((prev) => ({ ...prev, [sku]: data })); } catch (err) { console.error(err); } }; const handleCheckout = async () => { if (cart.length === 0) { alert("Cart is empty!"); return; } const payload = { payment_method: "CASH", items: cart.map((item) => ({ product_sku: item.sku, quantity: item.qty })) }; try { const res = await fetch(`${API_BASE_URL}/transactions/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); if (res.ok) { alert("✅ Sale Successful!"); setCart([]); refresh(); } else { const err = await res.json(); alert(`❌ Failed: ${err.detail}`); } } catch (err) { alert("Network Error"); } }; const totalAmount = cart.reduce((sum, item) => sum + item.selling_price * item.qty, 0); return ( <div className="flex h-full bg-[#F3F4F6]"><div className="w-2/3 p-8 overflow-y-auto"><header className="mb-8 flex justify-between items-center"><div><h2 className="text-3xl font-bold text-gray-900">Point of Sale</h2><p className="text-gray-500 mt-1">{products.length} Items</p></div><div className="relative"><Search className="absolute left-4 top-3 text-gray-400" size={20} /><input type="text" placeholder="Search products..." className="pl-12 pr-6 py-3 rounded-full border border-gray-200 bg-white shadow-sm w-64" onChange={(e) => setSearch(e.target.value)} /></div></header><div className="grid grid-cols-3 gap-5">{filteredProducts.map((p) => (<div key={p.sku} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition-all cursor-pointer flex flex-col" onClick={() => addToCart(p)}><div className="p-5 flex-grow"><div className="flex justify-between items-start mb-4"><div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400"><Package size={24} /></div><span className="text-[10px] font-bold tracking-wider bg-gray-100 text-gray-500 px-2 py-1 rounded-md">{p.sku}</span></div><h4 className="font-bold text-gray-900 text-lg leading-tight truncate">{p.name}</h4><p className="text-indigo-600 font-bold text-xl mt-2">R {p.selling_price}</p></div><div className="px-5 py-3 bg-gray-50 border-t border-gray-100">{!predictions[p.sku] ? (<button onClick={(e) => { e.stopPropagation(); fetchAI(p.sku); }} className="text-xs text-indigo-600 font-bold flex items-center gap-2 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors w-max"><Sparkles size={14} /> AI Insight</button>) : (<div className="flex items-center gap-2 text-xs font-medium"><TrendingUp size={14} className={predictions[p.sku].trend === 'Growing' ? 'text-emerald-500' : 'text-red-500'} /><span className="text-gray-700">Forecast: {predictions[p.sku].predicted_weekly_demand} units</span></div>)}</div></div>))}</div></div><div className="w-1/3 bg-white border-l border-gray-200 flex flex-col shadow-xl z-30"><div className="p-8 border-b border-gray-100"><h3 className="text-xl font-extrabold text-gray-900 flex items-center gap-3"><ShoppingCart className="text-indigo-600" size={24} /> Current Order</h3></div><div className="flex-1 p-6 overflow-y-auto space-y-4">{cart.length === 0 ? ( <div className="text-center text-gray-400 mt-20">Cart is empty</div> ) : (cart.map((item) => (<div key={item.sku} className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-100"><div className="flex items-center gap-3"><div className="w-8 h-8 bg-white rounded flex items-center justify-center text-xs font-bold text-gray-500 border border-gray-200">x{item.qty}</div><div><p className="font-bold text-gray-900 text-sm">{item.name}</p><p className="text-xs text-gray-500">R {item.selling_price}</p></div></div><span className="font-bold text-gray-900">R {(item.selling_price * item.qty).toFixed(2)}</span></div>)))}</div><div className="p-8 bg-white border-t border-gray-100"><div className="flex justify-between items-center text-2xl font-bold text-gray-900 mb-6"><span>Total</span><span>R {totalAmount.toFixed(2)}</span></div><button onClick={handleCheckout} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-indigo-200 flex items-center justify-center gap-2"><CreditCard size={20} /> Checkout</button></div></div></div> ); }
+// --- UPDATED POS VIEW (WITH IMAGES) ---
+function POSView({ products, refresh }: { products: Product[], refresh: Function }) {
+  const [cart, setCart] = useState<CartItem[]>([]); 
+  const [predictions, setPredictions] = useState<Record<string, AIPrediction>>({}); 
+  const [search, setSearch] = useState("");
+  
+  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase()) || p.category?.toLowerCase().includes(search.toLowerCase()));
+  const addToCart = (product: Product) => { setCart((prev) => { const existing = prev.find((item) => item.sku === product.sku); if (existing) return prev.map((item) => item.sku === product.sku ? { ...item, qty: item.qty + 1 } : item); return [...prev, { ...product, qty: 1 }]; }); };
+  const fetchAI = async (sku: string) => { try { const res = await fetch(`${API_BASE_URL}/ai/predict/${sku}`); const data = await res.json(); setPredictions((prev) => ({ ...prev, [sku]: data })); } catch (err) { console.error(err); } };
+  const handleCheckout = async () => { if (cart.length === 0) { alert("Cart is empty!"); return; } const payload = { payment_method: "CASH", items: cart.map((item) => ({ product_sku: item.sku, quantity: item.qty })) }; try { const res = await fetch(`${API_BASE_URL}/transactions/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); if (res.ok) { alert("✅ Sale Successful!"); setCart([]); refresh(); } else { const err = await res.json(); alert(`❌ Failed: ${err.detail}`); } } catch (err) { alert("Network Error"); } };
+  const totalAmount = cart.reduce((sum, item) => sum + item.selling_price * item.qty, 0);
+  
+  return (
+    <div className="flex h-full bg-[#F3F4F6]">
+        <div className="w-2/3 p-8 overflow-y-auto">
+            <header className="mb-8 flex justify-between items-center"><div><h2 className="text-3xl font-bold text-gray-900">Point of Sale</h2><p className="text-gray-500 mt-1">{products.length} Items</p></div><div className="relative"><Search className="absolute left-4 top-3 text-gray-400" size={20} /><input type="text" placeholder="Search products..." className="pl-12 pr-6 py-3 rounded-full border border-gray-200 bg-white shadow-sm w-64" onChange={(e) => setSearch(e.target.value)} /></div></header>
+            <div className="grid grid-cols-3 gap-5">
+                {filteredProducts.map((p) => (
+                    <div key={p.sku} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition-all cursor-pointer flex flex-col group" onClick={() => addToCart(p)}>
+                        <div className="h-40 bg-gray-50 relative flex items-center justify-center overflow-hidden">
+                            {p.images && p.images.length > 0 ? (
+                                <img src={p.images[0].image_url} alt={p.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                            ) : (<div className="text-gray-300"><Package size={48} /></div>)}
+                            <div className="absolute top-2 right-2 bg-black/50 text-white text-[10px] px-2 py-1 rounded-full backdrop-blur-sm">{p.stock_quantity} left</div>
+                        </div>
+                        <div className="p-4 flex-grow"><h4 className="font-bold text-gray-900 text-sm leading-tight line-clamp-2">{p.name}</h4><div className="flex justify-between items-center mt-2"><span className="text-xs text-gray-400 font-mono">{p.sku}</span><p className="text-indigo-600 font-bold text-lg">R {p.selling_price}</p></div></div>
+                        <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex justify-between items-center">{!predictions[p.sku] ? (<button onClick={(e) => { e.stopPropagation(); fetchAI(p.sku); }} className="text-xs text-indigo-600 font-bold flex items-center gap-1 hover:underline"><Sparkles size={12} /> AI</button>) : (<div className="flex items-center gap-1 text-[10px] font-bold"><TrendingUp size={12} className={predictions[p.sku].trend === 'Growing' ? 'text-emerald-500' : 'text-red-500'} /><span>{predictions[p.sku].predicted_weekly_demand} predicted</span></div>)}</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+        <div className="w-1/3 bg-white border-l border-gray-200 flex flex-col shadow-xl z-30"><div className="p-8 border-b border-gray-100"><h3 className="text-xl font-extrabold text-gray-900 flex items-center gap-3"><ShoppingCart className="text-indigo-600" size={24} /> Current Order</h3></div><div className="flex-1 p-6 overflow-y-auto space-y-4">{cart.length === 0 ? ( <div className="text-center text-gray-400 mt-20">Cart is empty</div> ) : (cart.map((item) => (<div key={item.sku} className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-100"><div className="flex items-center gap-3"><div className="w-8 h-8 bg-white rounded flex items-center justify-center text-xs font-bold text-gray-500 border border-gray-200">x{item.qty}</div><div><p className="font-bold text-gray-900 text-sm">{item.name}</p><p className="text-xs text-gray-500">R {item.selling_price}</p></div></div><span className="font-bold text-gray-900">R {(item.selling_price * item.qty).toFixed(2)}</span></div>)))}</div><div className="p-8 bg-white border-t border-gray-100"><div className="flex justify-between items-center text-2xl font-bold text-gray-900 mb-6"><span>Total</span><span>R {totalAmount.toFixed(2)}</span></div><button onClick={handleCheckout} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-indigo-200 flex items-center justify-center gap-2"><CreditCard size={20} /> Checkout</button></div></div>
+    </div>
+  );
+}
+
+// ... (KEEP StaffView, SuppliersView, SettingsView, AddProductView, InventoryView, ReportsView, ChatView, Sidebar UNCHANGED)
+// Minified for brevity but they must exist
 function StaffView() { const [staff, setStaff] = useState<Staff[]>([]); const [form, setForm] = useState({ name: "", role: "Cashier", passcode: "" }); const fetchStaff = () => { fetch(`${API_BASE_URL}/staff/`).then(r => r.json()).then(setStaff).catch(console.error); }; useEffect(() => { fetchStaff(); }, []); const handleAdd = async () => { await fetch(`${API_BASE_URL}/staff/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }); alert("Staff Member Added"); fetchStaff(); setForm({ name: "", role: "Cashier", passcode: "" }); }; return (<div className="p-10 max-w-5xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-bold">Staff Management</h2><div className="bg-white p-4 rounded-xl border border-gray-200 flex gap-2"><input placeholder="Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="border p-2 rounded text-sm"/><select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="border p-2 rounded text-sm"><option>Cashier</option><option>Manager</option></select><input placeholder="Passcode" value={form.passcode} onChange={e => setForm({...form, passcode: e.target.value})} className="border p-2 rounded text-sm w-24"/><button onClick={handleAdd} className="bg-indigo-600 text-white p-2 rounded hover:bg-indigo-700"><UserPlus size={20}/></button></div></div><div className="grid grid-cols-3 gap-6">{staff.map(s => (<div key={s.id} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center font-bold text-gray-500">{s.name.charAt(0)}</div><div><h4 className="font-bold text-lg">{s.name}</h4><p className="text-sm text-gray-500">{s.role}</p></div></div><div className="text-xs bg-gray-50 px-2 py-1 rounded text-gray-400">ID: {s.passcode}</div></div>))}{staff.length === 0 && <p className="text-gray-400 col-span-3 text-center py-10">No staff members found.</p>}</div></div>); }
 function SuppliersView() { const [suppliers, setSuppliers] = useState<Supplier[]>([]); const [form, setForm] = useState({ name: "", contact_email: "", phone: "" }); const fetchSuppliers = () => { fetch(`${API_BASE_URL}/suppliers/`).then(r => r.json()).then(setSuppliers).catch(console.error); }; useEffect(() => { fetchSuppliers(); }, []); const handleAdd = async () => { await fetch(`${API_BASE_URL}/suppliers/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }); alert("Supplier Added"); fetchSuppliers(); setForm({ name: "", contact_email: "", phone: "" }); }; return (<div className="p-10 max-w-5xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-bold">Suppliers</h2><div className="bg-white p-4 rounded-xl border border-gray-200 flex gap-2"><input placeholder="Company Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="border p-2 rounded text-sm"/><input placeholder="Email" value={form.contact_email} onChange={e => setForm({...form, contact_email: e.target.value})} className="border p-2 rounded text-sm"/><input placeholder="Phone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="border p-2 rounded text-sm w-32"/><button onClick={handleAdd} className="bg-indigo-600 text-white p-2 rounded hover:bg-indigo-700"><Plus size={20}/></button></div></div><div className="bg-white rounded-[20px] shadow-sm border border-gray-200 overflow-hidden"><table className="w-full text-left"><thead className="bg-gray-50 text-gray-500 text-sm"><tr><th className="p-5">Company</th><th className="p-5">Email</th><th className="p-5">Phone</th></tr></thead><tbody className="divide-y divide-gray-100">{suppliers.map(s => (<tr key={s.id}><td className="p-5 font-bold">{s.name}</td><td className="p-5 text-gray-600">{s.contact_email}</td><td className="p-5 text-gray-600">{s.phone}</td></tr>))}</tbody></table>{suppliers.length === 0 && <p className="p-8 text-center text-gray-400">No suppliers registered.</p>}</div></div>); }
 function SettingsView({ storeName, setStoreName }: any) { const [localName, setLocalName] = useState(storeName); const handleSave = () => { setStoreName(localName); localStorage.setItem("storeName", localName); alert("Settings Saved!"); }; return (<div className="p-10 max-w-xl mx-auto"><h2 className="text-2xl font-bold mb-6">System Settings</h2><div className="bg-white p-8 rounded-[20px] border border-gray-200 space-y-6 shadow-sm"><div><label className="block text-sm font-bold text-gray-700 mb-2">Store Name</label><input value={localName} onChange={e => setLocalName(e.target.value)} className="w-full border border-gray-200 p-3 rounded-lg bg-gray-50"/><p className="text-xs text-gray-400 mt-1">This name will appear on the sidebar.</p></div><div><label className="block text-sm font-bold text-gray-700 mb-2">Currency</label><select className="w-full border border-gray-200 p-3 rounded-lg bg-gray-50"><option>South African Rand (ZAR)</option><option>US Dollar ($)</option></select></div><button onClick={handleSave} className="w-full bg-gray-900 text-white p-4 rounded-xl font-bold flex items-center justify-center gap-2"><Save size={18}/> Save Changes</button></div></div>); }
